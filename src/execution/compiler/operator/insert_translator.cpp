@@ -40,6 +40,8 @@ void InsertTranslator::Produce(FunctionBuilder *builder) {
     GenTableInsert(builder);
     // Insert into each index.
     const auto &indexes = codegen_->Accessor()->GetIndexOids(op_->GetTableOid());
+    // check constraint
+    GenConstraintsCheck(builder, indexes);
     for (auto &index_oid : indexes) {
       GenIndexInsert(builder, index_oid);
     }
@@ -162,6 +164,34 @@ void InsertTranslator::GenIndexInsert(FunctionBuilder *builder, const catalog::i
   builder->StartIfStmt(cond);
   Abort(builder);
   builder->FinishBlockStmt();
+}
+
+void InsertTranslator::GenConstraintsCheck(FunctionBuilder *builder, std::vector<const catalog::index_oid_t> &indexes) {
+  // for now we just store constraints in a index like structure
+  // optimized constraint structure wait to be determined
+  for (auto const &index_oid: indexes) {
+    auto constraints_pr = codegen_->NewIdentifier("constraints_pr");
+    std::vector<ast::Expr *> pr_call_args{codegen_->PointerTo(inserter_), codegen_->IntLiteral(!index_oid)};
+    auto get_index_pr_call = codegen_->BuiltinCall(ast::Builtin::GetIndexPR, std::move(pr_call_args));
+    builder->Append(codegen_->DeclareVariable(constraints_pr, nullptr, get_index_pr_call));
+
+    auto index = codegen_->Accessor()->GetIndex(index_oid);
+    const auto &index_pm = index->GetKeyOidToOffsetMap();
+    const auto &index_schema = codegen_->Accessor()->GetIndexSchema(index_oid);
+
+    pr_filler_.GenFiller(index_pm, index_schema, codegen_->MakeExpr(constraints_pr), builder);
+
+    // only check if it needs to be unique
+    if (index_schema.Unique()) {
+      auto index_insert_call = codegen_->OneArgCall{
+        ast::Builtin::IndexInsertUnique,inserter_, true
+      };
+      auto cond = codegen_->UnaryOp(parsing::Token::Type::BANG, constraints_pr);
+      builder->StartIfStmt(cond);
+    }
+    Abort(builder);
+    builder->FinishBlockStmt();
+  }
 }
 
 void InsertTranslator::FillPRFromChild(terrier::execution::compiler::FunctionBuilder *builder) {
