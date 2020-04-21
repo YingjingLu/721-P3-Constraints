@@ -28,21 +28,34 @@ To align with each stage of the development, we formulate our design goal in ter
 ### Constraint Storage Definition
 >catalog/postgres/pg_constraint.h
 
-This is the definition of what information of what a constraint information should be stored. The constraints are stored in forms of table and the row definition is also defined here.
+This is the definition of what information of what a const raint information should be stored. The constraints are stored in forms of table and the row definition is also defined here.
 
 ```C++
-col_oid_t CONOID_COL_OID;         // INTEGER (pkey) - pkey for a constraint
-col_oid_t CONNAME_COL_OID;        // VARCHAR - name of the constraint
-col_oid_t CONNAMESPACE_COL_OID;   // INTEGER (fkey: pg_namespace) - namespace of the constraint
-col_oid_t CONTYPE_COL_OID;        // CHAR - type of the constraint
-col_oid_t CONDEFERRABLE_COL_OID;  // BOOLEAN - is the constraint deferrable 
-col_oid_t CONDEFERRED_COL_OID;    // BOOLEAN - has the constraint deferred by default
-col_oid_t CONVALIDATED_COL_OID;   // BOOLEAN - has the constraint validated
-col_oid_t CONRELID_COL_OID;       // INTEGER (fkey: pg_class) - the relation id of the constraint
-col_oid_t CONINDID_COL_OID;       // INTEGER (fkey: pg_class) - the index supporting this constraint, if it is UNIQUEm FK or EXCLUSION, 0 otherwise
-col_oid_t CONFRELID_COL_OID;      // INTEGER (fkey: pg_class) - if a foreign key, the reference table oid, else 0
-col_oid_t CONBIN_COL_OID;         // BIGINT (assumes 64-bit pointers) - if a check constraint, the internal representation of expression of check
-col_oid_t CONSRC_COL_OID;         // VARCHAR - The identifier of the columns that the constraint applies to
+// data layout of the PG_constraint table 
+CONOID_COL_OID;         // INTEGER (pkey) - pkey for a constraint
+CONNAME_COL_OID;        // VARCHAR - name of the constraint
+CONNAMESPACE_COL_OID;   // INTEGER (fkey: pg_namespace) - namespace of the constraint
+CONTYPE_COL_OID;        // CHAR - type of the constraint
+CONDEFERRABLE_COL_OID;  // BOOLEAN - is the constraint deferrable 
+CONDEFERRED_COL_OID;    // BOOLEAN - has the constraint deferred by default
+CONVALIDATED_COL_OID;   // BOOLEAN - has the constraint validated
+CONTABLE_COL_OID        // INTEGER - table_oid of the table that this contraint applies to
+CONCOL_COL_OID          // INTEGER - column_oid of the column that constraints applies to (for NOT NULL, PK, CHECK)
+CONRELID_COL_OID;       // INTEGER ARRAY (Array of FK ref to PK of relation id) - the relation id of the FK constraint
+CONINDID_COL_OID;       // INTEGER (fkey: pg_class) - the index supporting this constraint, if it is UNIQUEm FK or EXCLUSION, 0 otherwise
+CONUNIQUE_COL_OID;      // INTEGER ARRAY(Array of col_ids that UNIQUE enforce to) - Only has value for unique constraint
+CONBIN_COL_OID;         // BIGINT
+CONSRC_COL_OID;         // VARCHAR 
+```
+```C++
+// data layout of the relation table
+RELOID_COL_OID          // INTEGER (pkey) - pkey of the relation
+REL_REF_TABLE_COL_OID   // INTEGER (fkey) - table_oid of the reference table
+REL_CHILD_TABLE_COL_OID // INTEGER (fkey) - table oid of the child table that declares foreign key
+REL_REF_COL_OID         // INTEGER (fkey) - column oid of the reference table
+REL_CHILD_COL_OID       // INTEGER (fkey) - column oid of the column that declares foreign key
+REL_UPDATE_CASCADE_OID  // BOOLEAN - whether perform update cascade on the relation
+REL_DELETE_CASCADE_OID  // BOOLEAN - whether perform deletion cascade on the relation 
 ```
 
 Supporting Constraints:
@@ -52,6 +65,7 @@ Supporting Constraints:
 * UNIQUE (CONTYPE_COL_OID = 'u') - Data in the column has to be unique
 * TRIGGER (CONTYPE_COL_OID = 't') - Trigger constraint to invoke trigger during insert
 * EXCLUSION (CONTYPE_COL_OID = 'e') - Exclusion constraint to exclude some set of data in this column
+* NOT NULL (CONTYPE_COL_OID = 'n') - Not null constraint to in this column
 
 ### Constraint Creation during Table creation
 >catalog/catalog_accessor.h
