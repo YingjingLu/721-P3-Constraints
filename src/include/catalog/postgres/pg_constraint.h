@@ -23,24 +23,25 @@ constexpr index_oid_t CONSTRAINT_FOREIGNTABLE_INDEX_OID = index_oid_t(67);
  * terrier-specific addtions (generally pointers to internal objects).
  */
 constexpr col_oid_t CONOID_COL_OID = col_oid_t(1);         // INTEGER (pkey)
-constexpr col_oid_t CONNAME_COL_OID = col_oid_t(2);        // VARCHAR
-constexpr col_oid_t CONNAMESPACE_COL_OID = col_oid_t(3);   // INTEGER (fkey: pg_namespace)
-constexpr col_oid_t CONTYPE_COL_OID = col_oid_t(4);        // CHAR
-constexpr col_oid_t CONDEFERRABLE_COL_OID = col_oid_t(5);  // BOOLEAN
-constexpr col_oid_t CONDEFERRED_COL_OID = col_oid_t(6);    // BOOLEAN
-constexpr col_oid_t CONVALIDATED_COL_OID = col_oid_t(7);   // BOOLEAN
-constexpr col_oid_t CONRELID_COL_OID = col_oid_t(8);       // INTEGER (fkey: pg_class)
-constexpr col_oid_t CONINDID_COL_OID = col_oid_t(9);       // INTEGER (fkey: pg_class)
-constexpr col_oid_t CONFRELID_COL_OID = col_oid_t(10);     // INTEGER (fkey: pg_class)
-constexpr col_oid_t CONBIN_COL_OID = col_oid_t(11);        // BIGINT (assumes 64-bit pointers)
-constexpr col_oid_t CONSRC_COL_OID = col_oid_t(12);        // VARCHAR
+constexpr col_oid_t CONNAME_COL_OID = col_oid_t(2);        // VARCHAR - name of the constraint
+constexpr col_oid_t CONNAMESPACE_COL_OID = col_oid_t(3);   // INTEGER (fkey: pg_namespace) - namespace of the constraint
+constexpr col_oid_t CONTYPE_COL_OID = col_oid_t(4);        // CHAR - type of the constraint, expressed in char defined below
+constexpr col_oid_t CONDEFERRABLE_COL_OID = col_oid_t(5);  // BOOLEAN - is the constraint deferrable
+constexpr col_oid_t CONDEFERRED_COL_OID = col_oid_t(6);    // BOOLEAN - has the constraint deferred by default?
+constexpr col_oid_t CONVALIDATED_COL_OID = col_oid_t(7);   // BOOLEAN - has the constraint been validated? currently can only be false for FK
+constexpr col_oid_t CONRELID_COL_OID = col_oid_t(8);       // INTEGER (fkey: pg_class) - table oid of the table this constraint is on
+constexpr col_oid_t CONINDID_COL_OID = col_oid_t(9);       // INTEGER (fkey: pg_class) - index oid of the table this constraint applies to
+constexpr col_oid_t CONFRELID_COL_OID = col_oid_t(10);     // VARCHAR - An array of comma separated fk_constraint_id that this foreign key contains, empty string for other constraints
+constexpr col_oid_t CONUNIQUE_COL_COL_OID = col_oid_t(11); // VARCHAR - An array of comma separated column id that unique applies to. empty string for other type 
+constexpr col_oid_t CONCHECK_COL_OID = col_oid_t(12);      // INTEGER (fkey) - row id for the check_constraint_id for the check constraint tof this table, 0 if other type of constraints  
+constexpr col_oid_t CONEXCLUSION_COL_OID = col_oid_t(13);  // INTEGER (fkey) - row id for the exclusion_constraint_id for the exclusion constraint tof this table, 0 if other type of constraints  
 
-constexpr uint8_t NUM_PG_CONSTRAINT_COLS = 12;
+constexpr uint8_t NUM_PG_CONSTRAINT_COLS = 13;
 
 constexpr std::array<col_oid_t, NUM_PG_CONSTRAINT_COLS> PG_CONSTRAINT_ALL_COL_OIDS = {
     CONOID_COL_OID,        CONNAME_COL_OID,     CONNAMESPACE_COL_OID, CONTYPE_COL_OID,
     CONDEFERRABLE_COL_OID, CONDEFERRED_COL_OID, CONVALIDATED_COL_OID, CONRELID_COL_OID,
-    CONINDID_COL_OID,      CONFRELID_COL_OID,   CONBIN_COL_OID,       CONSRC_COL_OID};
+    CONINDID_COL_OID,      CONFRELID_COL_OID,   CONUNIQUE_COL_COL_OID, CONCHECK_COL_OID, CONEXCLUSION_COL_OID};
 
 enum class ConstraintType : char {
   CHECK = 'c',

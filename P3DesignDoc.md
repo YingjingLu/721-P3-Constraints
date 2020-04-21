@@ -28,7 +28,7 @@ To align with each stage of the development, we formulate our design goal in ter
 ### Constraint Storage Definition
 >catalog/postgres/pg_constraint.h
 
-This is the definition of what information of what a constraint information should be stored. The constraints are stored in forms of table and the row definition is also defined here.
+This is the definition of what information of what a const raint information should be stored. The constraints are stored in forms of table and the row definition is also defined here.
 
 ```C++
 // data layout of the PG_constraint table 
