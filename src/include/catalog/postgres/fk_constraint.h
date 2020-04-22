@@ -18,14 +18,15 @@ constexpr index_oid_t FK_OID_INDEX_OID = index_oid_t(92);
  * terrier-specific addtions (generally pointers to internal objects).
  */
 constexpr col_oid_t FKID_COL_OID = col_oid_t(1);           // INTEGER (pkey)
-constexpr col_oid_t FKREFTABLE_COL_OID = col_oid_t(2);     // INTEGER (fkey: pg_class) - table oid of the table the fk is referencing to
-constexpr col_oid_t FKCHILDTABLE_COL_OID = col_oid_t(3);   // INTEGER (fkey: pg_class) - table oid of the table declare foreign key (child table)
-constexpr col_oid_t FKREFCOL_COL_OID = col_oid_t(4);       // INTEGER - column oid of the fk reference column
-constexpr col_oid_t FKCHILDCOL_COL_OID = col_oid_t(5);     // INTEGER - column oid of the column that declare foreign key (child column)
-constexpr col_oid_t FKUPDATEACTION_COL_OID = col_oid_t(6); // CHAR - action type oon update
-constexpr col_oid_t FKDELETEACTION_COL_OID = col_oid_t(7); // CHAR - action type on delete
+constexpr col_oid_t FKCONID_COL_OID = col_oid_t(2);        // INTEGER (fkey: pg_constraint) - constraint oid
+constexpr col_oid_t FKREFTABLE_COL_OID = col_oid_t(3);     // INTEGER (fkey: pg_class) - table oid of the table the fk is referencing to
+constexpr col_oid_t FKCHILDTABLE_COL_OID = col_oid_t(4);   // INTEGER (fkey: pg_class) - table oid of the table declare foreign key (child table)
+constexpr col_oid_t FKREFCOL_COL_OID = col_oid_t(5);       // INTEGER - column oid of the fk reference column
+constexpr col_oid_t FKCHILDCOL_COL_OID = col_oid_t(6);     // INTEGER - column oid of the column that declare foreign key (child column)
+constexpr col_oid_t FKUPDATEACTION_COL_OID = col_oid_t(7); // CHAR - action type oon update
+constexpr col_oid_t FKDELETEACTION_COL_OID = col_oid_t(8); // CHAR - action type on delete
 
-constexpr uint8_t NUM_FK_CONSTRAINT_COLS = 7;
+constexpr uint8_t NUM_FK_CONSTRAINT_COLS = 8;
 
 constexpr std::array<col_oid_t, NUM_FK_CONSTRAINT_COLS> FK_CONSTRAINT_ALL_COL_OIDS = {
     FKID_COL_OID,        FKREFTABLE_COL_OID,     FKCHILDTABLE_COL_OID, FKREFCOL_COL_OID,
