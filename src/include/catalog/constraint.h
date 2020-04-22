@@ -157,7 +157,7 @@ class PG_Constraint {
       case (ConstraintType::FOREIGN_KEY):
         TERRIER_ASSERT(con_frelid_varchar.compare("") != 0, "FK should be initialized with none-empty string");
         raw_oid_vec = SplitString(con_frelid_varchar, VARCHAR_ARRAY_DELIMITER);
-        
+
         break;
       case (ConstraintType::PRIMARY_KEY):
         // TODO: Implement support for PK
@@ -181,6 +181,16 @@ class PG_Constraint {
     }
   }
 };
+
+/**
+ * Managing all the pg_constraints within the entire db
+ * Exposes APIs for creating, enforcing, updating, deleting constraints
+ * This is created in the database catalog
+ */
+class PG_Constraint_Manager {
+
+};
+
 
 // python style spliting a string into vector according to a delimiting char
 std::vector<std::string> SplitString(std::string str, char delimiter = ',') {
