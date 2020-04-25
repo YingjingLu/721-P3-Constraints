@@ -171,10 +171,8 @@ class DatabaseCatalog {
    */
   std::vector<constraint_oid_t> GetConstraints(common::ManagedPointer<transaction::TransactionContext> txn,
                                                table_oid_t table);
-  bool DatabaseCatalog::DeleteConstraints(const common::ManagedPointer<transaction::TransactionContext> txn,
-                                    const table_oid_t table)
-  bool DatabaseCatalog::DeleteConstraint(const common::ManagedPointer<transaction::TransactionContext> txn,
-                                  constraint_oid_t constraint)
+  bool DeleteConstraints(const common::ManagedPointer<transaction::TransactionContext> txn, const table_oid_t table);
+  bool DeleteConstraint(const common::ManagedPointer<transaction::TransactionContext> txn, constraint_oid_t constraint);
   /**
    * A list of all indexes on the given table
    * @param txn for the operation

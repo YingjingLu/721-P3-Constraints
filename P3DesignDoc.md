@@ -89,11 +89,13 @@ During Update and Deletion we check for:
 
 ### Constraint Class APIs for check
 >catalog/pg_constraint.h
-**Constraint Modifier** - modify the constraints by their id
-* Constraint Getter - get the constraints by oid, table and by type
-* Constraint Setter/Updater - set and update according to the table id and constraint id
-* Constraint Deletion - delete constraints by table_oid/constraint_oid
-
+**High Level Constraint Modifier** - modify the constraints by their id
+```C++
+bool CreateConstraintsEntry(const ManagedPointer<TransactionContext> txn, const namespace_oid_t ns_oid, const table_oid_t table_oid, const constraint_oid_t constraint_oid, const string &name, const IndexSchema &schema);
+vector<constraint_oid_t> GetConstraints(const ManagedPointer<TransactionContext> txn, table_oid_t table));
+bool DeleteConstraints(const ManagedPointer<TransactionContext> txn, const table_oid_t table);
+bool DeleteConstraint(const ManagedPointer<TransactionContext> txn, constraint_oid_t constraint);
+```
 **Constraint Enforcer** - check and enfoce constraint during operation
 * Constraint checker for NULL on different types of data and different def of NULL
 * Constraint checker for FOREIGN KEY/UNIQUE: comparator for equality among different data types

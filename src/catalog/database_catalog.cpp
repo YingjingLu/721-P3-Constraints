@@ -1023,9 +1023,9 @@ bool DatabaseCatalog::CreateConstraintsEntry(const common::ManagedPointer<transa
   auto *const constraints_insert_pr = constraints_insert_redo->Delta();
 
   // Write the constraint_oid into the PR
-    auto con_oid_offset = pg_constraints_all_cols_prm_[postgres::CONOID_COL_OID];
-    auto *con_oid_ptr = constraints_insert_pr->AccessForceNotNull(con_oid_offset);
-    *(reinterpret_cast<constraint_oid_t *>(con_oid_ptr)) = constraint_oid;
+  auto con_oid_offset = pg_constraints_all_cols_prm_[postgres::CONOID_COL_OID];
+  auto *con_oid_ptr = constraints_insert_pr->AccessForceNotNull(con_oid_offset);
+  *(reinterpret_cast<constraint_oid_t *>(con_oid_ptr)) = constraint_oid;
 
   // Write the constraint_name into the PR
     const auto name_varlen = storage::StorageUtil::CreateVarlen(name);
@@ -1085,49 +1085,14 @@ bool DatabaseCatalog::CreateConstraintsEntry(const common::ManagedPointer<transa
     delete[] index_buffer;
     return false;
   }
-
-  // Insert into (non-unique) indexes_table_index
-//  index_pr = constraints_name_index_init.InitializeRow(index_buffer);
-//  *(reinterpret_cast<table_oid_t *>(index_pr->AccessForceNotNull(0))) = table_oid;
-//  if (!indexes_table_index_->Insert(txn, *index_pr, indexes_tuple_slot)) {
-//    // There was duplicate value. Free the buffer and
-//    // return INVALID_TABLE_OID to indicate the database was not created.
-//    delete[] index_buffer;
-//    return false;
-//  }
-
-//  // Free the buffer, we are finally done
-//  delete[] index_buffer;
-//
-//  // Write the col oids into a new Schema object
-//  indexkeycol_oid_t curr_col_oid(1);
-//  for (auto &col : schema.GetColumns()) {
-//    auto success = CreateColumn(txn, index_oid, curr_col_oid++, col);
-//    if (!success) return false;
-//  }
-//
-//  std::vector<IndexSchema::Column> cols =
-//      GetColumns<IndexSchema::Column, index_oid_t, indexkeycol_oid_t>(txn, index_oid);
-//  auto *new_schema =
-//      new IndexSchema(cols, schema.Type(), schema.Unique(), schema.Primary(), schema.Exclusion(), schema.Immediate());
-//  txn->RegisterAbortAction([=]() { delete new_schema; });
-//
-//  auto *const update_redo = txn->StageWrite(db_oid_, postgres::CLASS_TABLE_OID, set_class_schema_pri_);
-//  auto *const update_pr = update_redo->Delta();
-//
-//  update_redo->SetTupleSlot(class_tuple_slot);
-//  *reinterpret_cast<IndexSchema **>(update_pr->AccessForceNotNull(0)) = new_schema;
-//  auto UNUSED_ATTRIBUTE res = classes_->Update(txn, update_redo);
-//  TERRIER_ASSERT(res, "Updating an uncommitted insert should not fail");
-
   return true;
 }
 bool DatabaseCatalog::DeleteConstraints(const common::ManagedPointer<transaction::TransactionContext> txn,
                                     const table_oid_t table) {
   if (!TryLock(txn)) return false;
-  // Get the indexes
+  // Get the constraints
   const auto con_oids = GetConstraints(txn, table);
-  // Delete all indexes
+  // Delete all constraints
   for (const auto con_oid : con_oids) {
     auto result = DeleteConstraint(txn, con_oid);
     if (!result) {
@@ -1147,7 +1112,7 @@ std::vector<constraint_oid_t> DatabaseCatalog::GetConstraints(
 
   // Find all entries for the given table using the index
   auto *key_pr = con_pri.InitializeRow(buffer);
-  *(reinterpret_cast<table_oid_t *>(key_pr->AccessForceNotNull(postgres::CONOID_COL_OID))) = table;
+  *(reinterpret_cast<table_oid_t *>(key_pr->AccessForceNotNull(0))) = table;
   std::vector<storage::TupleSlot> index_scan_results;
   constraints_table_index_->ScanKey(*txn, *key_pr, &index_scan_results);
 
@@ -1173,144 +1138,144 @@ std::vector<constraint_oid_t> DatabaseCatalog::GetConstraints(
 
 bool DatabaseCatalog::DeleteConstraint(const common::ManagedPointer<transaction::TransactionContext> txn,
                                   constraint_oid_t constraint) {
-  if (!TryLock(txn)) return false;
-  // We should respect foreign key relations and attempt to delete the index's columns first
-  auto result = DeleteColumns<IndexSchema::Column, index_oid_t>(txn, index);
-  if (!result) return false;
+  // if (!TryLock(txn)) return false;
+  // // We should respect foreign key relations and attempt to delete the index's columns first
+  // auto result = DeleteColumns<IndexSchema::Column, index_oid_t>(txn, index);
+  // if (!result) return false;
 
-  // Initialize PRs for pg_class
-  const auto class_oid_pri = classes_oid_index_->GetProjectedRowInitializer();
+  // // Initialize PRs for pg_class
+  // const auto class_oid_pri = classes_oid_index_->GetProjectedRowInitializer();
 
-  // Allocate buffer for largest PR
-  TERRIER_ASSERT(pg_class_all_cols_pri_.ProjectedRowSize() >= class_oid_pri.ProjectedRowSize(),
-                 "Buffer must be allocated for largest ProjectedRow size");
-  auto *const buffer = common::AllocationUtil::AllocateAligned(pg_class_all_cols_pri_.ProjectedRowSize());
-  auto *key_pr = class_oid_pri.InitializeRow(buffer);
+  // // Allocate buffer for largest PR
+  // TERRIER_ASSERT(pg_class_all_cols_pri_.ProjectedRowSize() >= class_oid_pri.ProjectedRowSize(),
+  //                "Buffer must be allocated for largest ProjectedRow size");
+  // auto *const buffer = common::AllocationUtil::AllocateAligned(pg_class_all_cols_pri_.ProjectedRowSize());
+  // auto *key_pr = class_oid_pri.InitializeRow(buffer);
 
-  // Find the entry using the index
-  *(reinterpret_cast<index_oid_t *>(key_pr->AccessForceNotNull(0))) = index;
-  std::vector<storage::TupleSlot> index_results;
-  classes_oid_index_->ScanKey(*txn, *key_pr, &index_results);
-  TERRIER_ASSERT(
-      index_results.size() == 1,
-      "Incorrect number of results from index scan. Expect 1 because it's a unique index. 0 implies that function was "
-      "called with an oid that doesn't exist in the Catalog, but binding somehow succeeded. That doesn't make sense. "
-      "Was a DROP plan node reused twice? IF EXISTS should be handled in the Binder, rather than pushing logic here.");
+  // // Find the entry using the index
+  // *(reinterpret_cast<index_oid_t *>(key_pr->AccessForceNotNull(0))) = index;
+  // std::vector<storage::TupleSlot> index_results;
+  // classes_oid_index_->ScanKey(*txn, *key_pr, &index_results);
+  // TERRIER_ASSERT(
+  //     index_results.size() == 1,
+  //     "Incorrect number of results from index scan. Expect 1 because it's a unique index. 0 implies that function was "
+  //     "called with an oid that doesn't exist in the Catalog, but binding somehow succeeded. That doesn't make sense. "
+  //     "Was a DROP plan node reused twice? IF EXISTS should be handled in the Binder, rather than pushing logic here.");
 
-  // Select the tuple out of the table before deletion. We need the attributes to do index deletions later
-  auto *table_pr = pg_class_all_cols_pri_.InitializeRow(buffer);
-  result = classes_->Select(txn, index_results[0], table_pr);
-  TERRIER_ASSERT(result, "Select must succeed if the index scan gave a visible result.");
+  // // Select the tuple out of the table before deletion. We need the attributes to do index deletions later
+  // auto *table_pr = pg_class_all_cols_pri_.InitializeRow(buffer);
+  // result = classes_->Select(txn, index_results[0], table_pr);
+  // TERRIER_ASSERT(result, "Select must succeed if the index scan gave a visible result.");
 
-  // Delete from pg_classes table
-  txn->StageDelete(db_oid_, postgres::CLASS_TABLE_OID, index_results[0]);
-  result = classes_->Delete(txn, index_results[0]);
-  if (!result) {
-    // write-write conflict. Someone beat us to this operation.
-    delete[] buffer;
-    return false;
-  }
+  // // Delete from pg_classes table
+  // txn->StageDelete(db_oid_, postgres::CLASS_TABLE_OID, index_results[0]);
+  // result = classes_->Delete(txn, index_results[0]);
+  // if (!result) {
+  //   // write-write conflict. Someone beat us to this operation.
+  //   delete[] buffer;
+  //   return false;
+  // }
 
-  // Get the attributes we need for pg_class indexes
-  table_oid_t table_oid = *(reinterpret_cast<const table_oid_t *const>(
-      table_pr->AccessForceNotNull(pg_class_all_cols_prm_[postgres::RELOID_COL_OID])));
-  const namespace_oid_t ns_oid = *(reinterpret_cast<const namespace_oid_t *const>(
-      table_pr->AccessForceNotNull(pg_class_all_cols_prm_[postgres::RELNAMESPACE_COL_OID])));
-  const storage::VarlenEntry name_varlen = *(reinterpret_cast<const storage::VarlenEntry *const>(
-      table_pr->AccessForceNotNull(pg_class_all_cols_prm_[postgres::RELNAME_COL_OID])));
+  // // Get the attributes we need for pg_class indexes
+  // table_oid_t table_oid = *(reinterpret_cast<const table_oid_t *const>(
+  //     table_pr->AccessForceNotNull(pg_class_all_cols_prm_[postgres::RELOID_COL_OID])));
+  // const namespace_oid_t ns_oid = *(reinterpret_cast<const namespace_oid_t *const>(
+  //     table_pr->AccessForceNotNull(pg_class_all_cols_prm_[postgres::RELNAMESPACE_COL_OID])));
+  // const storage::VarlenEntry name_varlen = *(reinterpret_cast<const storage::VarlenEntry *const>(
+  //     table_pr->AccessForceNotNull(pg_class_all_cols_prm_[postgres::RELNAME_COL_OID])));
 
-  auto *const schema_ptr = *(reinterpret_cast<const IndexSchema *const *const>(
-      table_pr->AccessForceNotNull(pg_class_all_cols_prm_[postgres::REL_SCHEMA_COL_OID])));
-  auto *const index_ptr = *(reinterpret_cast<storage::index::Index *const *const>(
-      table_pr->AccessForceNotNull(pg_class_all_cols_prm_[postgres::REL_PTR_COL_OID])));
+  // auto *const schema_ptr = *(reinterpret_cast<const IndexSchema *const *const>(
+  //     table_pr->AccessForceNotNull(pg_class_all_cols_prm_[postgres::REL_SCHEMA_COL_OID])));
+  // auto *const index_ptr = *(reinterpret_cast<storage::index::Index *const *const>(
+  //     table_pr->AccessForceNotNull(pg_class_all_cols_prm_[postgres::REL_PTR_COL_OID])));
 
-  const auto class_oid_index_init = classes_oid_index_->GetProjectedRowInitializer();
-  const auto class_name_index_init = classes_name_index_->GetProjectedRowInitializer();
-  const auto class_ns_index_init = classes_namespace_index_->GetProjectedRowInitializer();
+  // const auto class_oid_index_init = classes_oid_index_->GetProjectedRowInitializer();
+  // const auto class_name_index_init = classes_name_index_->GetProjectedRowInitializer();
+  // const auto class_ns_index_init = classes_namespace_index_->GetProjectedRowInitializer();
 
-  // Delete from classes_oid_index_
-  auto *index_pr = class_oid_index_init.InitializeRow(buffer);
-  *(reinterpret_cast<table_oid_t *const>(index_pr->AccessForceNotNull(0))) = table_oid;
-  classes_oid_index_->Delete(txn, *index_pr, index_results[0]);
+  // // Delete from classes_oid_index_
+  // auto *index_pr = class_oid_index_init.InitializeRow(buffer);
+  // *(reinterpret_cast<table_oid_t *const>(index_pr->AccessForceNotNull(0))) = table_oid;
+  // classes_oid_index_->Delete(txn, *index_pr, index_results[0]);
 
-  // Delete from classes_name_index_
-  index_pr = class_name_index_init.InitializeRow(buffer);
-  *(reinterpret_cast<storage::VarlenEntry *const>(index_pr->AccessForceNotNull(0))) = name_varlen;
-  *(reinterpret_cast<namespace_oid_t *>(index_pr->AccessForceNotNull(1))) = ns_oid;
-  classes_name_index_->Delete(txn, *index_pr, index_results[0]);
+  // // Delete from classes_name_index_
+  // index_pr = class_name_index_init.InitializeRow(buffer);
+  // *(reinterpret_cast<storage::VarlenEntry *const>(index_pr->AccessForceNotNull(0))) = name_varlen;
+  // *(reinterpret_cast<namespace_oid_t *>(index_pr->AccessForceNotNull(1))) = ns_oid;
+  // classes_name_index_->Delete(txn, *index_pr, index_results[0]);
 
-  // Delete from classes_namespace_index_
-  index_pr = class_ns_index_init.InitializeRow(buffer);
-  *(reinterpret_cast<namespace_oid_t *const>(index_pr->AccessForceNotNull(0))) = ns_oid;
-  classes_namespace_index_->Delete(txn, *index_pr, index_results[0]);
+  // // Delete from classes_namespace_index_
+  // index_pr = class_ns_index_init.InitializeRow(buffer);
+  // *(reinterpret_cast<namespace_oid_t *const>(index_pr->AccessForceNotNull(0))) = ns_oid;
+  // classes_namespace_index_->Delete(txn, *index_pr, index_results[0]);
 
-  // Now we need to delete from pg_index and its indexes
-  // Initialize PRs for pg_index
-  const auto index_oid_pr = indexes_oid_index_->GetProjectedRowInitializer();
-  const auto index_table_pr = indexes_table_index_->GetProjectedRowInitializer();
+  // // Now we need to delete from pg_index and its indexes
+  // // Initialize PRs for pg_index
+  // const auto index_oid_pr = indexes_oid_index_->GetProjectedRowInitializer();
+  // const auto index_table_pr = indexes_table_index_->GetProjectedRowInitializer();
 
-  TERRIER_ASSERT((pg_class_all_cols_pri_.ProjectedRowSize() >= delete_index_pri_.ProjectedRowSize()) &&
-                     (pg_class_all_cols_pri_.ProjectedRowSize() >= index_oid_pr.ProjectedRowSize()) &&
-                     (pg_class_all_cols_pri_.ProjectedRowSize() >= index_table_pr.ProjectedRowSize()),
-                 "Buffer must be allocated for largest ProjectedRow size");
+  // TERRIER_ASSERT((pg_class_all_cols_pri_.ProjectedRowSize() >= delete_index_pri_.ProjectedRowSize()) &&
+  //                    (pg_class_all_cols_pri_.ProjectedRowSize() >= index_oid_pr.ProjectedRowSize()) &&
+  //                    (pg_class_all_cols_pri_.ProjectedRowSize() >= index_table_pr.ProjectedRowSize()),
+  //                "Buffer must be allocated for largest ProjectedRow size");
 
-  // Find the entry in pg_index using the oid index
-  index_results.clear();
-  key_pr = index_oid_pr.InitializeRow(buffer);
-  *(reinterpret_cast<index_oid_t *>(key_pr->AccessForceNotNull(0))) = index;
-  indexes_oid_index_->ScanKey(*txn, *key_pr, &index_results);
-  TERRIER_ASSERT(index_results.size() == 1,
-                 "Incorrect number of results from index scan. Expect 1 because it's a unique index. size() of 0 "
-                 "implies an error in Catalog state because scanning pg_class worked, but it doesn't exist in "
-                 "pg_index. Something broke.");
+  // // Find the entry in pg_index using the oid index
+  // index_results.clear();
+  // key_pr = index_oid_pr.InitializeRow(buffer);
+  // *(reinterpret_cast<index_oid_t *>(key_pr->AccessForceNotNull(0))) = index;
+  // indexes_oid_index_->ScanKey(*txn, *key_pr, &index_results);
+  // TERRIER_ASSERT(index_results.size() == 1,
+  //                "Incorrect number of results from index scan. Expect 1 because it's a unique index. size() of 0 "
+  //                "implies an error in Catalog state because scanning pg_class worked, but it doesn't exist in "
+  //                "pg_index. Something broke.");
 
-  // Select the tuple out of pg_index before deletion. We need the attributes to do index deletions later
-  table_pr = delete_index_pri_.InitializeRow(buffer);
-  result = indexes_->Select(txn, index_results[0], table_pr);
-  TERRIER_ASSERT(result, "Select must succeed if the index scan gave a visible result.");
+  // // Select the tuple out of pg_index before deletion. We need the attributes to do index deletions later
+  // table_pr = delete_index_pri_.InitializeRow(buffer);
+  // result = indexes_->Select(txn, index_results[0], table_pr);
+  // TERRIER_ASSERT(result, "Select must succeed if the index scan gave a visible result.");
 
-  TERRIER_ASSERT(index == *(reinterpret_cast<const index_oid_t *const>(
-                              table_pr->AccessForceNotNull(delete_index_prm_[postgres::INDOID_COL_OID]))),
-                 "index oid from pg_index did not match what was found by the index scan from the argument.");
+  // TERRIER_ASSERT(index == *(reinterpret_cast<const index_oid_t *const>(
+  //                             table_pr->AccessForceNotNull(delete_index_prm_[postgres::INDOID_COL_OID]))),
+  //                "index oid from pg_index did not match what was found by the index scan from the argument.");
 
-  // Delete from pg_index table
-  txn->StageDelete(db_oid_, postgres::INDEX_TABLE_OID, index_results[0]);
-  result = indexes_->Delete(txn, index_results[0]);
-  TERRIER_ASSERT(
-      result,
-      "Delete from pg_index should always succeed as write-write conflicts are detected during delete from pg_class");
+  // // Delete from pg_index table
+  // txn->StageDelete(db_oid_, postgres::INDEX_TABLE_OID, index_results[0]);
+  // result = indexes_->Delete(txn, index_results[0]);
+  // TERRIER_ASSERT(
+  //     result,
+  //     "Delete from pg_index should always succeed as write-write conflicts are detected during delete from pg_class");
 
-  // Get the table oid
-  table_oid = *(reinterpret_cast<const table_oid_t *const>(
-      table_pr->AccessForceNotNull(delete_index_prm_[postgres::INDRELID_COL_OID])));
+  // // Get the table oid
+  // table_oid = *(reinterpret_cast<const table_oid_t *const>(
+  //     table_pr->AccessForceNotNull(delete_index_prm_[postgres::INDRELID_COL_OID])));
 
-  // Delete from indexes_oid_index
-  index_pr = index_oid_pr.InitializeRow(buffer);
-  *(reinterpret_cast<index_oid_t *const>(index_pr->AccessForceNotNull(0))) = index;
-  indexes_oid_index_->Delete(txn, *index_pr, index_results[0]);
+  // // Delete from indexes_oid_index
+  // index_pr = index_oid_pr.InitializeRow(buffer);
+  // *(reinterpret_cast<index_oid_t *const>(index_pr->AccessForceNotNull(0))) = index;
+  // indexes_oid_index_->Delete(txn, *index_pr, index_results[0]);
 
-  // Delete from indexes_table_index
-  index_pr = index_table_pr.InitializeRow(buffer);
-  *(reinterpret_cast<table_oid_t *const>(index_pr->AccessForceNotNull(0))) = table_oid;
-  indexes_table_index_->Delete(txn, *index_pr, index_results[0]);
+  // // Delete from indexes_table_index
+  // index_pr = index_table_pr.InitializeRow(buffer);
+  // *(reinterpret_cast<table_oid_t *const>(index_pr->AccessForceNotNull(0))) = table_oid;
+  // indexes_table_index_->Delete(txn, *index_pr, index_results[0]);
 
-  // Everything succeeded from an MVCC standpoint, so register a deferred action for the GC to delete the index with txn
-  // manager. See base function comment.
-  txn->RegisterCommitAction(
-      [=, garbage_collector{garbage_collector_}](transaction::DeferredActionManager *deferred_action_manager) {
-        if (index_ptr->Type() == storage::index::IndexType::BWTREE) {
-          garbage_collector->UnregisterIndexForGC(common::ManagedPointer(index_ptr));
-        }
-        // Unregistering from GC can happen immediately, but we have to double-defer freeing the actual objects
-        deferred_action_manager->RegisterDeferredAction([=]() {
-          deferred_action_manager->RegisterDeferredAction([=]() {
-            delete schema_ptr;
-            delete index_ptr;
-          });
-        });
-      });
+  // // Everything succeeded from an MVCC standpoint, so register a deferred action for the GC to delete the index with txn
+  // // manager. See base function comment.
+  // txn->RegisterCommitAction(
+  //     [=, garbage_collector{garbage_collector_}](transaction::DeferredActionManager *deferred_action_manager) {
+  //       if (index_ptr->Type() == storage::index::IndexType::BWTREE) {
+  //         garbage_collector->UnregisterIndexForGC(common::ManagedPointer(index_ptr));
+  //       }
+  //       // Unregistering from GC can happen immediately, but we have to double-defer freeing the actual objects
+  //       deferred_action_manager->RegisterDeferredAction([=]() {
+  //         deferred_action_manager->RegisterDeferredAction([=]() {
+  //           delete schema_ptr;
+  //           delete index_ptr;
+  //         });
+  //       });
+  //     });
 
-  delete[] buffer;
+  // delete[] buffer;
   return true;
 }
 

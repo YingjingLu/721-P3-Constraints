@@ -242,6 +242,9 @@ Schema Builder::GetConstraintTableSchema() {
   columns.emplace_back("conexclusion", type::TypeId::INTEGER, true, MakeNull(type::TypeId::INTEGER));
   columns.back().SetOid(CONEXCLUSION_COL_OID);
 
+  columns.emplace_back("conbin", type::TypeId::VARCHAR, true, MakeNull(type::TypeId::VARCHAR));
+  columns.back().SetOid(CONBIN_COL_OID);
+
   return Schema(columns);
 }
 
