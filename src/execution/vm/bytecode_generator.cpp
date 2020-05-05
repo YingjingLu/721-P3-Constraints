@@ -2311,7 +2311,6 @@ void BytecodeGenerator::VisitBuiltinCallExpr(ast::CallExpr *call) {
     case ast::Builtin::IndexInsertUnique:
     case ast::Builtin::IndexDelete:
     case ast::Builtin::VerifyTableInsertConstraint: {
-      std::cout<<"hit"<<std::endl;
       VisitBuiltinStorageInterfaceCall(call, builtin);
       break;
     }
