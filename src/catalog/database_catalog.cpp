@@ -1153,7 +1153,11 @@ bool DatabaseCatalog::VerifyTableInsertConstraint(common::ManagedPointer<transac
         con_rel, con_index, con_col_str);
     bool verify_res = true;
     // fill metadata depending on the type of the constraint
-    if(con_obj.contype_ == postgres::ConstraintType::FOREIGN_KEY) {
+    if (con_obj.contype_ == postgres::ConstraintType::UNIQUE ||
+        con_obj.contype_ == postgres::ConstraintType::PRIMARY_KEY) {
+      verify_res = VerifyUniquePKConstraint(txn, con_obj, pr);
+    }
+    else if(con_obj.contype_ == postgres::ConstraintType::FOREIGN_KEY) {
         std::vector<constraint_oid_t> con_ids = SpaceSeparatedOidToVector<constraint_oid_t>(confrel_str);
         auto fk_index_pri = fk_constraints_oid_index_->GetProjectedRowInitializer();
         for (constraint_oid_t fk_id : con_ids) {
@@ -1211,6 +1215,7 @@ bool DatabaseCatalog::VerifyTableInsertConstraint(common::ManagedPointer<transac
         con_obj.AddExclusionConstraintMetadata(con_exclusion);
         verify_res = VerifyExclusionConstraint(con_obj);
       }
+
     if (!verify_res) {
       delete[] child_buffer;
       delete[] buffer;
@@ -1221,6 +1226,45 @@ bool DatabaseCatalog::VerifyTableInsertConstraint(common::ManagedPointer<transac
   delete[] buffer;
   return true;
 }
+
+void DatabaseCatalog::CopyColumnData(storage::ProjectedRow *table_pr, storage::ProjectedRow *index_pr,
+                                     std::vector<col_oid_t> col_vec, const Schema &schema) {
+  auto col_offset_map = ColToOffsetMap(schema);
+  for (uint16_t col_index = 0; col_index < col_vec.size(); col_index ++) {
+    auto index_pr_index = col_index; // idx of the pr for index retrieval
+    auto table_pr_index = col_offset_map[col_vec[col_index]]; // index to get the data from pr
+    auto *const index_ptr = index_pr->AccessForceNotNull(index_pr_index);
+    auto *const pr_ptr = table_pr->AccessForceNotNull(table_pr_index);
+    const auto &table_col = schema.GetColumn(table_pr_index);
+    if (table_col.Type() == type::TypeId::VARCHAR || table_col.Type() == type::TypeId::VARBINARY) {
+      std::memcpy(index_ptr, pr_ptr, table_col.MaxVarlenSize());
+    } else {
+      std::memcpy(index_ptr, pr_ptr, type::TypeUtil::GetTypeSize(table_col.Type()));
+    }
+  }
+}
+
+bool DatabaseCatalog::VerifyUniquePKConstraint(common::ManagedPointer<transaction::TransactionContext> txn,
+    const PG_Constraint &con_obj,
+    storage::ProjectedRow *pr) {
+  const Schema &table_schema = GetSchema(txn, con_obj.conrelid_);
+  TERRIER_ASSERT(con_obj.concol_.size() > 0, "UNIQUE and PK constraint should always have affecting column");
+  common::ManagedPointer<storage::index::Index> index = GetIndex(txn, con_obj.conindid_);
+  const auto pri = index->GetProjectedRowInitializer();
+  auto *const buffer = common::AllocationUtil::AllocateAligned(pri.ProjectedRowSize());
+  auto *key_pr = pri.InitializeRow(buffer);
+  CopyColumnData(pr, key_pr, con_obj.concol_, table_schema);
+  std::vector<storage::TupleSlot> index_scan_results;
+  index->ScanKey(*txn, *key_pr, &index_scan_results);
+  // set the index projected row from source projected row
+  if (index_scan_results.empty()) {
+    delete[] buffer;
+    return false;
+  }
+  delete[] buffer;
+  return true;
+}
+
 bool DatabaseCatalog::VerifyFKConstraint(common::ManagedPointer<transaction::TransactionContext> txn,
                                          const PG_Constraint &con_obj, storage::ProjectedRow *pr) {
   // get the index of the constraint
@@ -1234,19 +1278,7 @@ bool DatabaseCatalog::VerifyFKConstraint(common::ManagedPointer<transaction::Tra
   auto *key_pr = ref_index_pri.InitializeRow(buffer);
   TERRIER_ASSERT(con_obj.fkMetadata_.fk_srcs_.size() == con_obj.fkMetadata_.fk_refs_.size(),
                   "Src and Ref should have the same amound of column");
-  auto col_offset_map = ColToOffsetMap(ref_table_schema);
-  for (uint16_t col_index = 0; col_index < con_obj.fkMetadata_.fk_srcs_.size(); col_index ++) {
-    auto fk_pr_index = col_index; // idx of the pr for index retrieval
-    auto table_pr_index = col_offset_map[con_obj.fkMetadata_.fk_refs_[col_index]]; // index to get the data from pr
-    auto *const index_ptr = key_pr->AccessForceNotNull(fk_pr_index);
-    auto *const pr_ptr = pr->AccessForceNotNull(table_pr_index);
-    const auto &table_col = ref_table_schema.GetColumn(table_pr_index);
-    if (table_col.Type() == type::TypeId::VARCHAR || table_col.Type() == type::TypeId::VARBINARY) {
-      std::memcpy(index_ptr, pr_ptr, table_col.MaxVarlenSize());
-    } else {
-      std::memcpy(index_ptr, pr_ptr, type::TypeUtil::GetTypeSize(table_col.Type()));
-    }
-  }
+  CopyColumnData(pr, key_pr, con_obj.fkMetadata_.fk_refs_, ref_table_schema);
   std::vector<storage::TupleSlot> index_scan_results;
   ref_table_index->ScanKey(*txn, *key_pr, &index_scan_results);
   // set the index projected row from source projected row
@@ -1526,7 +1558,7 @@ constraint_oid_t DatabaseCatalog::CreateFKConstraint(
   }
 
   index_pr = con_index_index_pr.InitializeRow(index_buffer);
-  *(reinterpret_cast<index_oid_t *>(index_pr->AccessForceNotNull(0))) = src_index;
+  *(reinterpret_cast<index_oid_t *>(index_pr->AccessForceNotNull(0))) = sink_index;
   if (!constraints_index_index_->Insert(txn, *index_pr, constraint_tuple_slot)) {
     delete[] index_buffer;
     return INVALID_CONSTRAINT_OID;
@@ -1540,6 +1572,7 @@ std::vector<constraint_oid_t> DatabaseCatalog::CreateFKConstraintInFKTable(
     postgres::FKActionType update_action, postgres::FKActionType delete_action) {
   TERRIER_ASSERT(sink_cols.size() == src_cols.size(), "src and ref cols should have same amount of columns related.");
   TERRIER_ASSERT(sink_cols.size() > 0, "src and ref cols should have none zero amount of cols related.");
+  if (!TryLock(txn)) return {};
   std::vector<constraint_oid_t> res;
   res.reserve(sink_cols.size());
   for (size_t i = 0; i < sink_cols.size(); i++) {
@@ -1923,24 +1956,25 @@ bool DatabaseCatalog::DeleteConstraint(const common::ManagedPointer<transaction:
 bool DatabaseCatalog::DeleteFKConstraint(const common::ManagedPointer<transaction::TransactionContext> txn,
                                          table_oid_t table, constraint_oid_t constraint,
                                          storage::VarlenEntry fk_constraints) {
-  const auto con_oid_pri = fk_constraints_oid_index_->GetProjectedRowInitializer();
+  if (!TryLock(txn)) return false;
+  const auto con_oid_pri = fk_constraints_constraint_oid_index_->GetProjectedRowInitializer();
   TERRIER_ASSERT((pg_fk_constraints_all_cols_pri_.ProjectedRowSize() >= con_oid_pri.ProjectedRowSize()),
                  "Buffer must be allocated for largest ProjectedRow size");
   // Find the entry in pg_constraint using the oid index
   std::vector<storage::TupleSlot> con_results;
-  std::vector<constraint_oid_t> fk_constraint_oids = fk_constraints.DeserializeArray<constraint_oid_t>();
+  std::vector<constraint_oid_t> fk_constraint_oids = SpaceSeparatedOidToVector<constraint_oid_t>(VarlentoString(fk_constraints));
   auto *const buffer = common::AllocationUtil::AllocateAligned(pg_fk_constraints_all_cols_pri_.ProjectedRowSize());
   auto key_pr = con_oid_pri.InitializeRow(buffer);
-  *(reinterpret_cast<constraint_oid_t *>(
-      key_pr->AccessForceNotNull(pg_fk_constraints_all_cols_prm_[postgres::FKCONID_COL_OID]))) = constraint;
+  *(reinterpret_cast<constraint_oid_t *>(key_pr->AccessForceNotNull(0))) = constraint;
   fk_constraints_constraint_oid_index_->ScanKey(*txn, *key_pr, &con_results);
   TERRIER_ASSERT(con_results.size() == fk_constraint_oids.size(),
                  "Should obtain the same amount of PRs as recorded in pg_constraint table");
-
   // Select the tuple out of pg_index before deletion. We need the attributes to do index deletions later
   auto all_col_pr = pg_fk_constraints_all_cols_pri_.InitializeRow(buffer);
+  bool result = true;
   for (size_t i = 0; i < con_results.size(); i++) {
-    auto result = fk_constraints_->Select(txn, con_results[i], all_col_pr);
+//    pg_fk_constraints_all_cols_pri_.InitializeRow(buffer);
+    result = fk_constraints_->Select(txn, con_results[i], all_col_pr);
     TERRIER_ASSERT(result, "Select must succeed if the index scan gave a visible result.");
 
     TERRIER_ASSERT(constraint == *(reinterpret_cast<const constraint_oid_t *const>(all_col_pr->AccessForceNotNull(
@@ -1951,7 +1985,7 @@ bool DatabaseCatalog::DeleteFKConstraint(const common::ManagedPointer<transactio
     result = fk_constraints_->Delete(txn, con_results[i]);
     TERRIER_ASSERT(result, "Delete from fk_constraint should always succeed");
 
-    // Get the needed attributes for deleting from index
+//     Get the needed attributes for deleting from index
     auto fk_con_id = *(reinterpret_cast<const constraint_oid_t *const>(
         all_col_pr->AccessForceNotNull(pg_fk_constraints_all_cols_prm_[postgres::FKID_COL_OID])));
     auto src_table_oid = *(reinterpret_cast<const table_oid_t *const>(
@@ -1983,7 +2017,7 @@ bool DatabaseCatalog::DeleteFKConstraint(const common::ManagedPointer<transactio
   }
 
   delete[] buffer;
-  return true;
+  return result;
 }
 
 bool DatabaseCatalog::DeleteCheckConstraint(const common::ManagedPointer<transaction::TransactionContext> txn,
