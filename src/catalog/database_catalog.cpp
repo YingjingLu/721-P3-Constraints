@@ -1085,7 +1085,10 @@ bool DatabaseCatalog::FKCascade(common::ManagedPointer<transaction::TransactionC
 
 bool DatabaseCatalog::VerifyTableInsertConstraint(common::ManagedPointer<transaction::TransactionContext> txn, table_oid_t table, storage::ProjectedRow *pr) {
   // TODO: We do not know if this needs a lock or not
-  if(!TryLock(txn)) return false;
+  if(!TryLock(txn)) {
+    txn->SetMustAbort();
+    return false;
+  }
   auto *const buffer = common::AllocationUtil::AllocateAligned(pg_constraints_all_cols_pri_.ProjectedRowSize());
   auto con_pri = constraints_table_index_->GetProjectedRowInitializer();
   auto *key_pr = con_pri.InitializeRow(buffer);
@@ -1219,6 +1222,7 @@ bool DatabaseCatalog::VerifyTableInsertConstraint(common::ManagedPointer<transac
     if (!verify_res) {
       delete[] child_buffer;
       delete[] buffer;
+      txn->SetMustAbort();
       return false;
     }
   }
@@ -1257,7 +1261,7 @@ bool DatabaseCatalog::VerifyUniquePKConstraint(common::ManagedPointer<transactio
   std::vector<storage::TupleSlot> index_scan_results;
   index->ScanKey(*txn, *key_pr, &index_scan_results);
   // set the index projected row from source projected row
-  if (index_scan_results.empty()) {
+  if (!index_scan_results.empty()) {
     delete[] buffer;
     return false;
   }
