@@ -1096,7 +1096,7 @@ bool DatabaseCatalog::VerifyTableInsertConstraint(common::ManagedPointer<transac
   // If we found no indexes, return an empty list
   if (index_scan_results.empty()) {
     delete[] buffer;
-    return {};
+    return true;
   }
   auto *select_pr = pg_constraints_all_cols_pri_.InitializeRow(buffer);
   std::vector<PG_Constraint> constraints;
